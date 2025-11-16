@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" id="htmlRoot">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>استخراج النص وتحويله إلى JSON</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="app-container">
+      <header class="app-header">
+        <div style="position: relative">
+          <button
+            id="langToggleBtn"
+            class="btn-lang-toggle"
+            aria-label="Toggle Language"
+          >
+            <span id="langToggleText">English</span>
+          </button>
+          <h1 id="headerTitle">استخراج النص وتحويله إلى JSON ديناميكي محسّن</h1>
+          <p id="headerSubtitle">
+            قم برفع صورة أو ملف PDF لاستخراج النص وتحويله إلى بيانات منظمة
+          </p>
+        </div>
+      </header>
+
+      <main class="main-card">
+        <div class="form-section">
+          <label class="form-label" id="fileUploadLabel"
+            >رفع صورة أو ملف PDF</label
+          >
+          <div class="file-upload-wrapper">
+            <input
+              type="file"
+              id="fileInput"
+              accept=".png,.jpg,.jpeg,.webp,.pdf"
+            />
+            <div class="file-upload-content">
+              <svg
+                class="upload-icon"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                ></path>
+              </svg>
+              <div class="upload-text" id="uploadText">
+                اضغط لرفع ملف أو اسحبه هنا
+              </div>
+              <div class="upload-hint" id="uploadHint">
+                PNG, JPG, JPEG, WEBP, PDF
+              </div>
+            </div>
+          </div>
+          <div id="fileNameDisplay" class="file-name-display hidden"></div>
+        </div>
+
+        <div class="divider" id="dividerText">أو</div>
+
+        <div class="form-section">
+          <label class="form-label" for="urlInput" id="urlInputLabel"
+            >أدخل رابط الصورة</label
+          >
+          <input
+            type="text"
+            id="urlInput"
+            class="form-input"
+            placeholder="https://example.com/image.jpg"
+          />
+        </div>
+
+        <div class="form-section">
+          <label class="form-label" for="language" id="languageSelectorLabel"
+            >اختر اللغة</label
+          >
+          <select id="language" class="form-select">
+            <option value="auto" id="langOptAuto">كشف تلقائي</option>
+            <option value="eng" id="langOptEng">الإنجليزية</option>
+            <option value="ara" id="langOptAra">العربية</option>
+          </select>
+        </div>
+
+        <div class="button-group">
+          <button id="startBtn" class="btn btn-primary btn-full">
+            <span id="startBtnText">ابدأ التحويل</span>
+            <div id="loadingSpinner" class="loading-spinner hidden"></div>
+          </button>
+        </div>
+
+        <div id="statusText" class="status-text hidden"></div>
+
+        <div class="button-group" style="margin-top: var(--space-12)">
+          <button
+            id="clearBtn"
+            class="btn btn-danger btn-full"
+            data-text-key="button_clear"
+          >
+            مسح
+          </button>
+        </div>
+      </main>
+
+      <div id="alertContainer"></div>
+
+      <div id="resultContainer" class="hidden">
+        <div class="result-card">
+          <h3>
+            <svg
+              class="icon"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              ></path>
+            </svg>
+            <span id="extractedTextHeading">النص المستخرج</span>
+          </h3>
+          <div id="resultText" class="result-text"></div>
+        </div>
+
+        <div class="result-card">
+          <h3>
+            <svg
+              class="icon"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              ></path>
+            </svg>
+            <span id="formHeading">المعلومات المستخرجة</span>
+          </h3>
+          <div id="formDisplay" class="form-display"></div>
+          <div class="save-buttons">
+            <button id="saveJsonBtn" class="btn btn-success">
+              <span id="saveJsonText">حفظ JSON</span>
+            </button>
+            <button id="saveCsvBtn" class="btn btn-info">
+              <span id="saveCsvText">حفظ CSV</span>
+            </button>
+            <button id="copyBtn" class="btn btn-secondary">
+              <span id="copyText">نسخ إلى الحافظة</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="result-card">
+          <h3>
+            <svg
+              class="icon"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
+              ></path>
+            </svg>
+            <span id="dynamicJsonHeading">JSON ديناميكي محسّن</span>
+          </h3>
+          <div id="jsonOutput" class="json-output"></div>
+        </div>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>

@@ -1,0 +1,153 @@
+// --- server.js (Updated) ---
+
+const express = require('express');
+const multer = require('multer');
+const FormData = require('form-data');
+const fetch = require('node-fetch'); // Use node-fetch v2 for CommonJS
+const { Poppler } = require('@al-Mothafar/node-poppler'); // <-- UPDATED PACKAGE
+const fs = require('fs');
+const path = require('path');
+
+const app = express();
+const port = 3000;
+
+// --- CONFIGURATION ---
+const OCR_SPACE_API_KEY = 'K89620932088957';
+
+// Multer setup
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
+
+// Serve static files
+app.use(express.static(path.join(__dirname)));
+
+/**
+ * Sends a single image file (as a buffer) to the OCR.space API
+ */
+async function sendToOcrApi(fileBuffer, language) {
+  const formData = new FormData();
+  formData.append('apikey', OCR_SPACE_API_KEY);
+  formData.append('OCREngine', '2');
+  formData.append('language', language);
+  formData.append('file', fileBuffer, { filename: 'image.png' });
+
+  try {
+    const response = await fetch('https://api.ocr.space/parse/image', {
+      method: 'POST',
+      body: formData,
+    });
+
+    const result = await response.json();
+
+    if (result.IsErroredOnProcessing) {
+      throw new Error(result.ErrorMessage.join(', '));
+    }
+
+    if (result.ParsedResults && result.ParsedResults[0]) {
+      return result.ParsedResults[0].ParsedText;
+    }
+    return ''; // No text found
+  } catch (error) {
+    console.error('OCR API Error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Handles the main /api/ocr endpoint
+ */
+app.post('/api/ocr', upload.single('file'), async (req, res) => {
+  const { language, url } = req.body;
+  const file = req.file;
+
+  try {
+    let allText = '';
+
+    if (file) {
+      // --- PDF Processing Logic (UPDATED) ---
+      if (file.mimetype === 'application/pdf') {
+        const tempPdfPath = path.join(__dirname, `temp_${Date.now()}.pdf`);
+        fs.writeFileSync(tempPdfPath, file.buffer);
+
+        const poppler = new Poppler(); // <-- Create instance
+        const out_prefix = `page_${Date.now()}`; // <-- Define prefix
+        const options = {
+          // <-- Simplified options
+          pngFile: true,
+          dpi: 300,
+        };
+
+        // 1. Convert PDF to images
+        //    (New syntax: poppler.pdfToImage(inputFile, outputPrefix, options))
+        await poppler.pdfToImage(
+          tempPdfPath,
+          path.join(__dirname, out_prefix),
+          options
+        );
+
+        // 2. Read all generated image files
+        //    (Filter logic updated to use the 'out_prefix' variable)
+        const files = fs
+          .readdirSync(__dirname)
+          .filter((f) => f.startsWith(out_prefix) && f.endsWith('.png'))
+          .sort((a, b) => {
+            // Sort files numerically by page number (e.g., ...-1.png, ...-2.png)
+            const aNum = parseInt(a.split('-').pop().replace('.png', ''));
+            const bNum = parseInt(b.split('-').pop().replace('.png', ''));
+            return aNum - bNum;
+          });
+
+        // 3. OCR each image one by one (This part is unchanged)
+        for (const imgFile of files) {
+          const imgPath = path.join(__dirname, imgFile);
+          const imgBuffer = fs.readFileSync(imgPath);
+
+          const pageText = await sendToOcrApi(imgBuffer, language);
+          allText += pageText + '\n\n';
+
+          fs.unlinkSync(imgPath); // Delete image after processing
+        }
+
+        fs.unlinkSync(tempPdfPath); // Delete temp PDF
+      } else {
+        // --- Single Image Processing Logic (Unchanged) ---
+        allText = await sendToOcrApi(file.buffer, language);
+      }
+    } else if (url) {
+      // --- URL Processing Logic (Unchanged) ---
+      const formData = new FormData();
+      formData.append('apikey', OCR_SPACE_API_KEY);
+      formData.append('OCREngine', '2');
+      formData.append('language', language);
+      formData.append('url', url);
+
+      const response = await fetch('https://api.ocr.space/parse/image', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+      if (result.IsErroredOnProcessing) {
+        throw new Error(result.ErrorMessage.join(', '));
+      }
+      if (result.ParsedResults && result.ParsedResults[0]) {
+        allText = result.ParsedResults[0].ParsedText;
+      }
+    } else {
+      return res.status(400).json({ error: 'No file or URL provided.' });
+    }
+
+    // Success! (Unchanged)
+    res.json({ text: allText.trim() });
+  } catch (error) {
+    console.error('Server-side processing error:', error);
+    res
+      .status(500)
+      .json({ error: error.message || 'An internal server error occurred.' });
+  }
+});
+
+app.listen(port, () => {
+  console.log(`Server running at http://localhost:${port}`);
+  console.log('Serving static files from:', __dirname);
+});
