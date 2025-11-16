@@ -1,10 +1,12 @@
-// --- server.js (Updated) ---
+// --- server.js ---
+// This is a simple Node.js Express server.
+// DO NOT run this in the browser. Run it from your terminal: node server.js
 
 const express = require('express');
 const multer = require('multer');
 const FormData = require('form-data');
 const fetch = require('node-fetch'); // Use node-fetch v2 for CommonJS
-const { Poppler } = require('@al-Mothafar/node-poppler'); // <-- UPDATED PACKAGE
+const { poppler } = require('pdf-poppler');
 const fs = require('fs');
 const path = require('path');
 
@@ -12,13 +14,16 @@ const app = express();
 const port = 3000;
 
 // --- CONFIGURATION ---
-const OCR_SPACE_API_KEY = 'K89620932088957';
+// !! PUT YOUR SECRET API KEY HERE. DO NOT SHARE THIS FILE. !!
+// You can also use environment variables: process.env.OCR_API_KEY
+const OCR_SPACE_API_KEY = 'K89620932088957'; 
 
-// Multer setup
+// Multer setup for handling file uploads in memory
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-// Serve static files
+// Serve the static files (index.html, style.css, script.js)
+// This tells Express to serve your frontend files from the root directory
 app.use(express.static(path.join(__dirname)));
 
 /**
@@ -38,11 +43,11 @@ async function sendToOcrApi(fileBuffer, language) {
     });
 
     const result = await response.json();
-
+    
     if (result.IsErroredOnProcessing) {
       throw new Error(result.ErrorMessage.join(', '));
     }
-
+    
     if (result.ParsedResults && result.ParsedResults[0]) {
       return result.ParsedResults[0].ParsedText;
     }
@@ -64,57 +69,52 @@ app.post('/api/ocr', upload.single('file'), async (req, res) => {
     let allText = '';
 
     if (file) {
-      // --- PDF Processing Logic (UPDATED) ---
+      // --- PDF Processing Logic ---
       if (file.mimetype === 'application/pdf') {
+        // Create a unique temp file name
         const tempPdfPath = path.join(__dirname, `temp_${Date.now()}.pdf`);
         fs.writeFileSync(tempPdfPath, file.buffer);
 
-        const poppler = new Poppler(); // <-- Create instance
-        const out_prefix = `page_${Date.now()}`; // <-- Define prefix
         const options = {
-          // <-- Simplified options
-          pngFile: true,
-          dpi: 300,
+          format: 'png', // Convert to PNG
+          out_dir: path.join(__dirname), // Output to the same directory
+          out_prefix: `page_${Date.now()}`, // Unique prefix for output files
+          dpi: 300 // Use good quality
         };
 
         // 1. Convert PDF to images
-        //    (New syntax: poppler.pdfToImage(inputFile, outputPrefix, options))
-        await poppler.pdfToImage(
-          tempPdfPath,
-          path.join(__dirname, out_prefix),
-          options
-        );
-
+        await poppler.pdfToImg(tempPdfPath, options);
+        
         // 2. Read all generated image files
-        //    (Filter logic updated to use the 'out_prefix' variable)
-        const files = fs
-          .readdirSync(__dirname)
-          .filter((f) => f.startsWith(out_prefix) && f.endsWith('.png'))
+        const files = fs.readdirSync(__dirname)
+          .filter(f => f.startsWith(options.out_prefix) && f.endsWith('.png'))
           .sort((a, b) => {
-            // Sort files numerically by page number (e.g., ...-1.png, ...-2.png)
+            // Sort files numerically by page number
             const aNum = parseInt(a.split('-').pop().replace('.png', ''));
             const bNum = parseInt(b.split('-').pop().replace('.png', ''));
             return aNum - bNum;
           });
 
-        // 3. OCR each image one by one (This part is unchanged)
+        // 3. OCR each image one by one
         for (const imgFile of files) {
           const imgPath = path.join(__dirname, imgFile);
           const imgBuffer = fs.readFileSync(imgPath);
-
+          
           const pageText = await sendToOcrApi(imgBuffer, language);
           allText += pageText + '\n\n';
-
+          
           fs.unlinkSync(imgPath); // Delete image after processing
         }
-
+        
         fs.unlinkSync(tempPdfPath); // Delete temp PDF
+
       } else {
-        // --- Single Image Processing Logic (Unchanged) ---
+        // --- Single Image Processing Logic ---
         allText = await sendToOcrApi(file.buffer, language);
       }
+
     } else if (url) {
-      // --- URL Processing Logic (Unchanged) ---
+      // --- URL Processing Logic ---
       const formData = new FormData();
       formData.append('apikey', OCR_SPACE_API_KEY);
       formData.append('OCREngine', '2');
@@ -133,17 +133,18 @@ app.post('/api/ocr', upload.single('file'), async (req, res) => {
       if (result.ParsedResults && result.ParsedResults[0]) {
         allText = result.ParsedResults[0].ParsedText;
       }
+      
     } else {
       return res.status(400).json({ error: 'No file or URL provided.' });
     }
 
-    // Success! (Unchanged)
+    // Success! Send the combined text back to the client
     res.json({ text: allText.trim() });
+
   } catch (error) {
     console.error('Server-side processing error:', error);
-    res
-      .status(500)
-      .json({ error: error.message || 'An internal server error occurred.' });
+    // Send a JSON error response to the client
+    res.status(500).json({ error: error.message || 'An internal server error occurred.' });
   }
 });
 
